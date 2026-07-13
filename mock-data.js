@@ -23,8 +23,8 @@ const TOOLS = [
     label: 'Rent Roll Analyzer',
     icon: '🏢',
     description: 'Upload a rent roll and get occupancy, in-place rents, and lease rollover summarized.',
-    table: null,
-    href: null
+    table: 'rent_roll_units',
+    href: 'rent-roll.html'
   },
   {
     key: 'omParser',
@@ -33,6 +33,14 @@ const TOOLS = [
     description: 'Extract key deal metrics and assumptions out of an offering memorandum.',
     table: null,
     href: null
+  },
+  {
+    key: 'debtOM',
+    label: 'Debt OM Drafting',
+    icon: '📝',
+    description: 'Draft a written offering memorandum to send to prospective lenders, section by section.',
+    table: 'om_drafts',
+    href: 'om-memo.html'
   }
 ];
 
