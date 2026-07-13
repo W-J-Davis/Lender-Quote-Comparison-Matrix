@@ -41,6 +41,14 @@ const TOOLS = [
     description: 'Draft a written offering memorandum to send to prospective lenders, section by section.',
     table: 'om_drafts',
     href: 'om-memo.html'
+  },
+  {
+    key: 't12Analyzer',
+    label: 'T-12 Analyzer',
+    icon: '📈',
+    description: 'Parse a trailing-twelve-month operating statement into income and expenses, and compute NOI, expense ratio, and analyst adjustments.',
+    table: 't12_line_items',
+    href: 't12-analyzer.html'
   }
 ];
 
