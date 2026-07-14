@@ -44,6 +44,7 @@ function mapDealRow(d, toolCounts) {
     loanAmount: d.loan_amount,
     status: d.status,
     date: d.created_at ? d.created_at.slice(0, 10) : null,
+    selectedLenderQuoteId: d.selected_lender_quote_id || null,
     tools: Object.fromEntries(TOOLS.map(t => {
       const count = toolCounts && toolCounts[t.key] ? toolCounts[t.key][d.id] : null;
       return [t.key, count ? { count } : null];

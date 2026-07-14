@@ -52,6 +52,7 @@ function openTool(key) {
 }
 
 let currentDealId = null;
+let currentDeal = null;
 
 async function render() {
   const params = new URLSearchParams(location.search);
@@ -71,6 +72,8 @@ async function render() {
     return;
   }
 
+  currentDeal = deal;
+
   content.innerHTML = `
     <a class="back-link" href="index.html">← Back to all deals</a>
 
@@ -86,6 +89,8 @@ async function render() {
       </div>
     </div>
 
+    <div id="summary-slot"></div>
+
     <div class="page-head">
       <div>
         <h2>Tools on this Deal</h2>
@@ -98,6 +103,190 @@ async function render() {
       <div class="tool-card placeholder">+ New tools you build will appear here automatically</div>
     </div>
   `;
+
+  await renderSummaryOnly();
+}
+
+// ── DEAL SUMMARY ──
+// Pulls headline numbers from the three tools that already save data
+// per deal (Rent Roll, T-12, Lender Quotes) and renders them above the
+// tool grid. Skipped entirely if none of the three have any data yet.
+
+function escapeHtml(str) {
+  return (str || '').toString().replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function monthlyPayment(principal, annualRate, amortYears) {
+  const r = annualRate / 100 / 12;
+  const n = amortYears * 12;
+  if (r === 0) return principal / n;
+  return principal * r * Math.pow(1 + r, n) / (Math.pow(1 + r, n) - 1);
+}
+
+function computeRentRollSummary(units) {
+  const total = units.length;
+  const occupied = units.filter(u => u.status === 'Occupied');
+  const occPct = total ? (occupied.length / total * 100) : null;
+  const totalRent = occupied.reduce((s, u) => s + (u.current_rent || 0), 0);
+  const avgRent = occupied.length ? totalRent / occupied.length : null;
+  const withMarket = occupied.filter(u => u.market_rent != null);
+  const sumMarket = withMarket.reduce((s, u) => s + u.market_rent, 0);
+  const sumGap = withMarket.reduce((s, u) => s + (u.market_rent - (u.current_rent || 0)), 0);
+  const lossToLease = sumMarket ? (sumGap / sumMarket * 100) : null;
+  const now = new Date();
+  const cutoff = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
+  const expiringCount = occupied.filter(u => {
+    if (!u.lease_end) return false;
+    const end = new Date(u.lease_end + 'T00:00:00');
+    return !isNaN(end) && end >= now && end <= cutoff;
+  }).length;
+  return { total, occupiedCount: occupied.length, occPct, avgRent, lossToLease, expiringCount };
+}
+
+function computeT12Summary(items) {
+  const income = items.filter(i => i.category === 'Income');
+  const expense = items.filter(i => i.category === 'Expense');
+  const egi = income.reduce((s, i) => s + (i.adjusted_amount || 0), 0);
+  const opex = expense.reduce((s, i) => s + (i.adjusted_amount || 0), 0);
+  const noi = egi - opex;
+  const expenseRatio = egi ? (opex / egi * 100) : null;
+  const reportedEgi = income.reduce((s, i) => s + (i.reported_amount || 0), 0);
+  const reportedOpex = expense.reduce((s, i) => s + (i.reported_amount || 0), 0);
+  const reportedNoi = reportedEgi - reportedOpex;
+  const adjustmentImpact = noi - reportedNoi;
+  return { egi, opex, noi, expenseRatio, reportedNoi, adjustmentImpact };
+}
+
+function pickInUseQuote(quotes, selectedId) {
+  if (selectedId) {
+    const match = quotes.find(q => q.id === selectedId);
+    if (match) return { quote: match, auto: false };
+  }
+  const withAllIn = quotes.filter(q => q.all_in != null);
+  if (withAllIn.length) return { quote: withAllIn.reduce((best, q) => q.all_in < best.all_in ? q : best), auto: true };
+  const withRate = quotes.filter(q => q.rate != null);
+  if (withRate.length) return { quote: withRate.reduce((best, q) => q.rate < best.rate ? q : best), auto: true };
+  return { quote: quotes[0], auto: true };
+}
+
+function computeLenderSizing(quotes, selectedId, noi) {
+  if (!quotes.length) return { inUse: null, auto: false, debtYield: null, dscr: null };
+  const { quote, auto } = pickInUseQuote(quotes, selectedId);
+  const debtYield = (noi != null && quote.amount) ? (noi / quote.amount * 100) : null;
+  let dscr = null;
+  if (noi != null && quote.amount && quote.rate != null && quote.amort) {
+    const annualDebtService = monthlyPayment(quote.amount, quote.rate, quote.amort) * 12;
+    dscr = annualDebtService ? noi / annualDebtService : null;
+  }
+  return { inUse: quote, auto, debtYield, dscr };
+}
+
+async function loadSummaryTables(dealId) {
+  const [rr, t12, lq] = await Promise.all([
+    sb.from('rent_roll_units').select('*').eq('deal_id', dealId),
+    sb.from('t12_line_items').select('*').eq('deal_id', dealId),
+    sb.from('lender_quotes').select('*').eq('deal_id', dealId)
+  ]);
+  if (rr.error) console.error('Could not load rent roll for summary:', rr.error.message);
+  if (t12.error) console.error('Could not load T-12 for summary:', t12.error.message);
+  if (lq.error) console.error('Could not load lender quotes for summary:', lq.error.message);
+  return { units: rr.data || [], items: t12.data || [], quotes: lq.data || [] };
+}
+
+function buildSummarySectionHtml(deal, units, items, quotes) {
+  if (units.length === 0 && items.length === 0 && quotes.length === 0) return '';
+
+  const rr = units.length ? computeRentRollSummary(units) : null;
+  const t12 = items.length ? computeT12Summary(items) : null;
+  const sizing = computeLenderSizing(quotes, deal.selectedLenderQuoteId, t12 ? t12.noi : null);
+
+  const cards = [
+    { label: 'Loan Requested', value: fmtMoney(deal.loanAmount), sub: 'requested loan amount' },
+    { label: 'Occupancy', value: rr && rr.occPct != null ? rr.occPct.toFixed(1) + '%' : '—', sub: rr ? rr.occupiedCount + ' of ' + rr.total + ' units' : 'no rent roll data yet' },
+    { label: 'Net Operating Income', value: t12 ? fmtMoney(t12.noi) : '—', sub: 'annual, underwritten', warn: t12 && t12.noi < 0 },
+    { label: 'Expense Ratio', value: t12 && t12.expenseRatio != null ? t12.expenseRatio.toFixed(1) + '%' : '—', sub: 'opex / EGI', warn: t12 && t12.expenseRatio != null && t12.expenseRatio > 50 },
+    { label: 'Debt Yield', value: sizing.debtYield != null ? sizing.debtYield.toFixed(1) + '%' : '—', sub: 'NOI / loan amount' },
+    { label: 'Implied DSCR', value: sizing.dscr != null ? sizing.dscr.toFixed(2) + 'x' : '—', sub: 'NOI / annual debt service', warn: sizing.dscr != null && sizing.dscr < 1.2 }
+  ];
+  const scorecardHtml = `<div class="scorecard">${cards.map(c => `<div class="score-card ${c.warn ? 'warn' : ''}"><div class="card-label">${c.label}</div><div class="card-value">${c.value}</div><div class="card-sub">${c.sub}</div></div>`).join('')}</div>`;
+
+  let lenderBasisHtml = '';
+  if (quotes.length > 0 && sizing.inUse) {
+    const q = sizing.inUse;
+    const details = [];
+    if (q.rate != null) details.push(q.rate.toFixed(2) + '%');
+    if (q.amort) details.push(q.amort + '-yr amort');
+    const dropdownHtml = quotes.length > 1
+      ? `<select onchange="handleLenderSelect(this.value)">${quotes.map(qq => `<option value="${qq.id}" ${qq.id === q.id ? 'selected' : ''}>${escapeHtml(qq.name)}</option>`).join('')}</select>`
+      : '';
+    lenderBasisHtml = `<div class="lender-basis-bar">
+      <span>Based on: <strong>${escapeHtml(q.name)}</strong>${details.length ? ', ' + details.join(', ') : ''}</span>
+      ${sizing.auto ? '<em>auto-selected, lowest rate</em>' : ''}
+      ${dropdownHtml}
+    </div>`;
+  }
+
+  const rentRollPanelHtml = `<div class="panel">
+    <h2>Rent Roll</h2>
+    <p class="sub">${rr ? rr.total + ' unit' + (rr.total === 1 ? '' : 's') + ' on file' : 'No rent roll data yet'}</p>
+    <div class="scorecard" style="margin-bottom:0;">
+      <div class="score-card"><div class="card-label">Avg Current Rent</div><div class="card-value">${rr && rr.avgRent != null ? fmtMoney(rr.avgRent) : '—'}</div><div class="card-sub">occupied units</div></div>
+      <div class="score-card"><div class="card-label">Loss to Lease</div><div class="card-value">${rr && rr.lossToLease != null ? rr.lossToLease.toFixed(1) + '%' : '—'}</div><div class="card-sub">in-place vs. market</div></div>
+      <div class="score-card"><div class="card-label">Expiring &le; 90 Days</div><div class="card-value">${rr ? rr.expiringCount : '—'}</div><div class="card-sub">occupied leases</div></div>
+    </div>
+  </div>`;
+
+  const t12PanelHtml = `<div class="panel">
+    <h2>T-12</h2>
+    <p class="sub">${t12 ? 'underwritten from line items on file' : 'No T-12 data yet'}</p>
+    <div class="scorecard" style="margin-bottom:0;">
+      <div class="score-card"><div class="card-label">Effective Gross Income</div><div class="card-value">${t12 ? fmtMoney(t12.egi) : '—'}</div><div class="card-sub">annual, underwritten</div></div>
+      <div class="score-card"><div class="card-label">Operating Expenses</div><div class="card-value">${t12 ? fmtMoney(t12.opex) : '—'}</div><div class="card-sub">annual, underwritten</div></div>
+      <div class="score-card"><div class="card-label">Adjustment Impact</div><div class="card-value">${t12 ? (t12.adjustmentImpact >= 0 ? '+' : '-') + fmtMoney(Math.abs(t12.adjustmentImpact)) : '—'}</div><div class="card-sub">adjusted vs. as-reported NOI</div></div>
+    </div>
+  </div>`;
+
+  const allInVals = quotes.map(q => q.all_in).filter(v => v != null);
+  const bestAllIn = allInVals.length ? Math.min(...allInVals) : null;
+  const lenderPanelHtml = `<div class="panel">
+    <h2>Lender Quotes</h2>
+    <p class="sub">${quotes.length ? quotes.length + ' quote' + (quotes.length === 1 ? '' : 's') + ' received' : 'No lender quotes yet'}</p>
+    <div class="scorecard" style="margin-bottom:0;">
+      <div class="score-card"><div class="card-label">Quotes Received</div><div class="card-value">${quotes.length || '—'}</div><div class="card-sub">this deal</div></div>
+      <div class="score-card"><div class="card-label">Lowest All-In Cost</div><div class="card-value">${bestAllIn != null ? bestAllIn.toFixed(3) + '%' : '—'}</div><div class="card-sub">across all quotes</div></div>
+      <div class="score-card"><div class="card-label">In-Use Loan Amount</div><div class="card-value">${sizing.inUse ? fmtMoney(sizing.inUse.amount) : '—'}</div><div class="card-sub">${sizing.inUse ? escapeHtml(sizing.inUse.name) : 'sizing basis'}</div></div>
+    </div>
+  </div>`;
+
+  return `
+    <div class="page-head" style="margin-bottom:14px;">
+      <div>
+        <h2>Deal Summary</h2>
+        <p class="sub">Headline numbers pulled from Rent Roll, T-12, and Lender Quotes.</p>
+      </div>
+    </div>
+    ${scorecardHtml}
+    ${lenderBasisHtml}
+    <div class="summary-panels">
+      ${rentRollPanelHtml}
+      ${t12PanelHtml}
+      ${lenderPanelHtml}
+    </div>
+  `;
+}
+
+async function renderSummaryOnly() {
+  const slot = document.getElementById('summary-slot');
+  if (!slot || !currentDeal) return;
+  const { units, items, quotes } = await loadSummaryTables(currentDealId);
+  slot.innerHTML = buildSummarySectionHtml(currentDeal, units, items, quotes);
+}
+
+async function handleLenderSelect(quoteId) {
+  const { error } = await sb.from('deals').update({ selected_lender_quote_id: quoteId || null }).eq('id', currentDealId);
+  if (error) { alert('Could not update selected lender: ' + error.message); return; }
+  currentDeal.selectedLenderQuoteId = quoteId || null;
+  await renderSummaryOnly();
 }
 
 (async () => {
@@ -110,6 +299,8 @@ async function render() {
     sb.channel('deal-' + id)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'deals', filter: 'id=eq.' + id }, render)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'lender_quotes', filter: 'deal_id=eq.' + id }, render)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'rent_roll_units', filter: 'deal_id=eq.' + id }, render)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 't12_line_items', filter: 'deal_id=eq.' + id }, render)
       .subscribe();
   }
 })();

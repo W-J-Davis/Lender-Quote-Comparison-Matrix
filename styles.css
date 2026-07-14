@@ -83,6 +83,26 @@ main.page { padding: 28px 32px; max-width: 1400px; margin: 0 auto; }
 .tool-card .tc-status.empty { color: var(--ink-light); }
 .tool-card.placeholder { border-style: dashed; display: flex; align-items: center; justify-content: center; color: var(--ink-light); font-size: 12px; text-align: center; padding: 30px 20px; }
 
+/* SCORECARDS & PANELS (deal summary, matches rent-roll.html / t12-analyzer.html) */
+.scorecard { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 14px; margin-bottom: 16px; }
+.score-card { background: var(--surface); border: 1px solid var(--rule); border-radius: var(--radius); padding: 16px 18px; }
+.score-card .card-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-light); margin-bottom: 6px; }
+.score-card .card-value { font-family: var(--font-display); font-size: 22px; color: var(--ink); margin-bottom: 2px; }
+.score-card .card-sub { font-size: 11px; color: var(--ink-light); }
+.score-card.warn .card-value { color: var(--gold); }
+
+.panel { background: var(--surface); border: 1px solid var(--rule); border-radius: var(--radius); padding: 20px 24px; margin-bottom: 24px; }
+.panel h2 { font-family: var(--font-display); font-size: 15px; font-weight: normal; margin-bottom: 4px; }
+.panel .sub { font-size: 11.5px; color: var(--ink-light); margin-bottom: 16px; }
+
+.summary-panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; margin-bottom: 24px; }
+.summary-panels .panel { margin-bottom: 0; }
+
+.lender-basis-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 12px; color: var(--ink-mid); margin-bottom: 24px; }
+.lender-basis-bar strong { font-weight: 600; }
+.lender-basis-bar em { font-style: italic; color: var(--ink-light); }
+.lender-basis-bar select { border: 1px solid var(--rule); border-radius: var(--badge-radius); padding: 5px 8px; font-size: 12px; font-family: var(--font-body); color: var(--ink); background: white; }
+
 /* DEAL HEADER (workspace page) */
 .deal-header-card { background: var(--surface); border: 1px solid var(--rule); border-radius: var(--radius); padding: 20px 24px; margin-bottom: 24px; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 16px; }
 .deal-header-card .dh-name { font-family: var(--font-display); font-size: 20px; margin-bottom: 6px; }
