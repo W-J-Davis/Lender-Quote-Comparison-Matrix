@@ -27,22 +27,6 @@ const TOOLS = [
     href: 'rent-roll.html'
   },
   {
-    key: 'omParser',
-    label: 'OM Parser',
-    icon: '📑',
-    description: 'Extract key deal metrics and assumptions out of an offering memorandum.',
-    table: null,
-    href: null
-  },
-  {
-    key: 'debtOM',
-    label: 'Debt OM Drafting',
-    icon: '📝',
-    description: 'Draft a written offering memorandum to send to prospective lenders, section by section.',
-    table: 'om_drafts',
-    href: 'om-memo.html'
-  },
-  {
     key: 't12Analyzer',
     label: 'T-12 Analyzer',
     icon: '📈',
