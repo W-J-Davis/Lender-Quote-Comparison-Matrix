@@ -51,6 +51,38 @@ function openTool(key) {
   alert(`"${tool ? tool.label : key}" isn't built yet — this button will open that tool, scoped to this deal, once it's built.`);
 }
 
+async function deleteDeal() {
+  if (!currentDeal) return;
+  if (!confirm(`Delete "${currentDeal.name}"? This permanently removes the deal and all of its rent roll units, T-12 line items, and lender quotes. This can't be undone.`)) return;
+
+  const btn = document.getElementById('delete-deal-btn');
+  if (btn) { btn.textContent = 'Deleting…'; btn.disabled = true; }
+
+  // Delete child rows first, regardless of whether the DB has cascade
+  // delete configured on deal_id — safe either way, and avoids a foreign
+  // key violation if it doesn't.
+  const [rr, t12, lq] = await Promise.all([
+    sb.from('rent_roll_units').delete().eq('deal_id', currentDealId),
+    sb.from('t12_line_items').delete().eq('deal_id', currentDealId),
+    sb.from('lender_quotes').delete().eq('deal_id', currentDealId)
+  ]);
+  const childError = rr.error || t12.error || lq.error;
+  if (childError) {
+    alert('Could not delete deal data: ' + childError.message);
+    if (btn) { btn.textContent = 'Delete Deal'; btn.disabled = false; }
+    return;
+  }
+
+  const { error: dealError } = await sb.from('deals').delete().eq('id', currentDealId);
+  if (dealError) {
+    alert('Could not delete deal: ' + dealError.message);
+    if (btn) { btn.textContent = 'Delete Deal'; btn.disabled = false; }
+    return;
+  }
+
+  location.href = 'index.html';
+}
+
 let currentDealId = null;
 let currentDeal = null;
 
@@ -87,6 +119,7 @@ async function render() {
           <div class="dh-field"><label>Date Added</label><span>${fmtDate(deal.date)}</span></div>
         </div>
       </div>
+      <button class="btn-ghost" id="delete-deal-btn" style="color:var(--red); align-self:flex-start;" onclick="deleteDeal()">Delete Deal</button>
     </div>
 
     <div id="summary-slot"></div>
