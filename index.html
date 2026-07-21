@@ -26,7 +26,10 @@
       <h2>All Deals</h2>
       <p class="sub">Every deal you're tracking, and which tools have data on it.</p>
     </div>
-    <button class="btn-primary" onclick="openNewDealModal()">+ New Deal</button>
+    <div style="display:flex; gap:10px;">
+      <button class="btn-ghost" id="load-example-btn" onclick="loadExampleDeal()">+ Load Example Deal</button>
+      <button class="btn-primary" onclick="openNewDealModal()">+ New Deal</button>
+    </div>
   </div>
 
   <div class="filter-bar">
@@ -133,6 +136,17 @@ async function renderDeals() {
       <div class="dc-tools">${toolBadgeHtml(d)}</div>
     </div>
   `).join('');
+}
+
+async function loadExampleDeal() {
+  const btn = document.getElementById('load-example-btn');
+  btn.textContent = 'Loading…'; btn.disabled = true;
+  try {
+    const dealId = await loadOrCreateExampleDeal();
+    location.href = 'deal.html?id=' + encodeURIComponent(dealId);
+  } catch (err) {
+    btn.textContent = '+ Load Example Deal'; btn.disabled = false;
+  }
 }
 
 function openNewDealModal() { document.getElementById('new-deal-modal').classList.add('open'); }
