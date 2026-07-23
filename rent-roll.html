@@ -79,6 +79,9 @@
   td { padding: 9px 12px; vertical-align: middle; white-space: nowrap; }
   td.num { text-align: right; font-variant-numeric: tabular-nums; }
   .mix-table-wrap, .matrix-wrap { overflow-x: auto; border-radius: var(--radius); border: 1px solid var(--rule); }
+  .cell-input { border: 1px solid transparent; background: transparent; font-family: var(--font-body); font-size: 12.5px; color: var(--ink); padding: 5px 6px; width: 100%; border-radius: 3px; }
+  .cell-input:hover { border-color: var(--rule); }
+  .cell-input:focus { border-color: var(--accent); outline: none; background: white; }
 
   .badge { display: inline-block; padding: 2px 7px; border-radius: 3px; font-size: 10px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; }
   .badge-occupied { background: var(--green-light); color: var(--green); }
@@ -161,7 +164,7 @@
     <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
       <span id="undo-bar-text" style="font-size:12.5px; color:var(--ink-mid);"></span>
       <div style="display:flex; gap:8px;">
-        <button class="btn-ghost" onclick="undoLastImport()">Undo</button>
+        <button class="btn-ghost" onclick="performUndo()">Undo</button>
         <button class="btn-ghost" onclick="dismissUndoBar()">Dismiss</button>
       </div>
     </div>
@@ -374,56 +377,69 @@ async function addUnit(data) {
   units.push(unit);
   if (!data) clearForm();
   render();
+  setUndo(`Added unit ${unit.unit || unit.tenant || ''}.`, async () => {
+    if (CONNECTED) {
+      const { error } = await sb.from('rent_roll_units').delete().eq('id', unit.id);
+      if (error) { alert('Could not undo: ' + error.message); return; }
+    }
+    units = units.filter(u => u.id !== unit.id);
+    render();
+  });
 }
 
 // Single round-trip bulk insert — used by Excel/CSV import and PDF/paste parsing so a large
 // rent roll doesn't run as hundreds of sequential awaited inserts (which is what let duplicate
 // imports happen before: a slow multi-second operation with no loading state invited repeat
 // clicks, each one re-running the whole import on top of the last).
-let lastImportedIds = []; // ids from the most recent bulk import — powers the Undo bar
-
-async function bulkAddUnits(dataArray) {
+async function bulkAddUnits(dataArray, sourceLabel) {
   const built = dataArray.map(buildUnitObject).filter(u => u.unit || u.tenant || u.currentRent != null);
-  if (built.length === 0) { lastImportedIds = []; return 0; }
+  if (built.length === 0) return 0;
+  const label = (count) => `Added ${count} unit${count === 1 ? '' : 's'}${sourceLabel ? ' from ' + sourceLabel : ''}.`;
 
   if (CONNECTED) {
     const { data: inserted, error } = await sb.from('rent_roll_units').insert(built.map(unitToDbRow)).select('id');
     if (error) throw new Error('Could not save units: ' + error.message);
-    lastImportedIds = inserted.map(r => String(r.id));
+    const importedIds = inserted.map(r => String(r.id));
     await loadExistingUnits(); // reload from DB — authoritative, avoids any local/remote drift
+    setUndo(label(importedIds.length), async () => {
+      const { error } = await sb.from('rent_roll_units').delete().in('id', importedIds);
+      if (error) { alert('Could not undo: ' + error.message); return; }
+      await loadExistingUnits();
+    });
   } else {
-    lastImportedIds = built.map(u => u.id);
+    const importedIds = built.map(u => u.id);
     units.push(...built);
     render();
+    setUndo(label(importedIds.length), async () => {
+      units = units.filter(u => !importedIds.includes(u.id));
+      render();
+    });
   }
   return built.length;
 }
 
-function showUndoBar(count, source) {
-  if (count === 0) return;
-  document.getElementById('undo-bar-text').textContent = `Added ${count} unit${count === 1 ? '' : 's'} from ${source}.`;
+// ── UNDO ── one level deep: every add/delete/clear replaces whatever was
+// there before, so there's always at most one action to undo, matching the
+// bar's single Undo/Dismiss affordance.
+let lastAction = null;
+
+function setUndo(label, undoFn) {
+  lastAction = undoFn;
+  document.getElementById('undo-bar-text').textContent = label;
   document.getElementById('undo-bar').style.display = 'block';
 }
 
 function dismissUndoBar() {
   document.getElementById('undo-bar').style.display = 'none';
-  lastImportedIds = [];
+  lastAction = null;
 }
 
-async function undoLastImport() {
-  if (lastImportedIds.length === 0) return;
-  const count = lastImportedIds.length;
-  if (!confirm(`Undo the last import? This deletes the ${count} unit${count === 1 ? '' : 's'} just added.`)) return;
-  if (CONNECTED) {
-    const { error } = await sb.from('rent_roll_units').delete().in('id', lastImportedIds);
-    if (error) { alert('Could not undo: ' + error.message); return; }
-    await loadExistingUnits();
-  } else {
-    units = units.filter(u => !lastImportedIds.includes(u.id));
-    render();
-  }
-  lastImportedIds = [];
+async function performUndo() {
+  if (!lastAction) return;
+  const undoFn = lastAction;
+  lastAction = null;
   document.getElementById('undo-bar').style.display = 'none';
+  await undoFn();
 }
 
 function setUploadBusy(isBusy) {
@@ -440,13 +456,24 @@ function setUploadBusy(isBusy) {
 
 async function clearAllUnits() {
   if (units.length === 0) return;
-  if (!confirm(`Delete all ${units.length} units from this rent roll? This can't be undone.`)) return;
+  if (!confirm(`Delete all ${units.length} units from this rent roll?`)) return;
+  const snapshot = units.map(u => ({ ...u }));
   if (CONNECTED) {
     const { error } = await sb.from('rent_roll_units').delete().eq('deal_id', DEAL_ID);
     if (error) { alert('Could not clear units: ' + error.message); return; }
   }
   units = [];
   render();
+  setUndo(`Cleared ${snapshot.length} unit${snapshot.length === 1 ? '' : 's'}.`, async () => {
+    if (CONNECTED) {
+      const { data: inserted, error } = await sb.from('rent_roll_units').insert(snapshot.map(unitToDbRow)).select();
+      if (error) { alert('Could not restore units: ' + error.message); return; }
+      units = inserted.map(dbRowToUnit);
+    } else {
+      units = snapshot;
+    }
+    render();
+  });
 }
 
 function normalizeDate(str) {
@@ -462,12 +489,52 @@ function clearForm() {
 }
 
 async function removeUnit(id) {
+  const unit = units.find(u => u.id === id);
   if (CONNECTED) {
     const { error } = await sb.from('rent_roll_units').delete().eq('id', id);
     if (error) { alert('Could not delete unit: ' + error.message); return; }
   }
   units = units.filter(u => u.id !== id);
   render();
+  if (unit) {
+    setUndo(`Deleted unit ${unit.unit || unit.tenant || ''}.`, async () => {
+      if (CONNECTED) {
+        const { data: row, error } = await sb.from('rent_roll_units').insert(unitToDbRow(unit)).select().single();
+        if (error) { alert('Could not restore unit: ' + error.message); return; }
+        unit.id = String(row.id);
+      }
+      units.push(unit);
+      render();
+    });
+  }
+}
+
+async function updateUnitMarketRent(id, rawValue) {
+  const unit = units.find(u => u.id === id);
+  if (!unit) return;
+  const previousValue = unit.marketRent;
+  const value = parseNum(rawValue);
+  if (value === previousValue) return;
+  unit.marketRent = value;
+
+  if (CONNECTED) {
+    const { error } = await sb.from('rent_roll_units').update({ market_rent: value }).eq('id', id);
+    if (error) { alert('Could not update market rent: ' + error.message); unit.marketRent = previousValue; render(); return; }
+  }
+  render();
+  setUndo(`Edited market rent for ${unit.unit || unit.tenant || 'unit'}.`, async () => {
+    if (CONNECTED) {
+      const { error } = await sb.from('rent_roll_units').update({ market_rent: previousValue }).eq('id', id);
+      if (error) { alert('Could not undo: ' + error.message); return; }
+    }
+    // Look up by id rather than reusing the captured `unit` reference — a
+    // realtime reload (any write on this table refreshes `units` wholesale)
+    // may have already swapped it out for a fresh object between the edit
+    // and the undo click.
+    const current = units.find(u => u.id === id);
+    if (current) current.marketRent = previousValue;
+    render();
+  });
 }
 
 // ── ANALYTICS ──
@@ -588,7 +655,7 @@ function renderUnitsTable() {
       <td>${u.leaseStart || 'N/A'}</td>
       <td>${u.leaseEnd || 'N/A'}</td>
       <td class="num">${u.currentRent != null ? fmtMoney(u.currentRent) : 'N/A'}</td>
-      <td class="num">${u.marketRent != null ? fmtMoney(u.marketRent) : 'N/A'}</td>
+      <td class="num"><input type="number" class="cell-input" style="text-align:right" value="${u.marketRent ?? ''}" placeholder="optional" onchange="updateUnitMarketRent('${u.id}', this.value)"></td>
       <td>${statusBadge(u.status)}</td>
       <td><button class="btn-del" onclick="removeUnit('${u.id}')">✕</button></td>
     </tr>`).join('');
@@ -753,9 +820,8 @@ async function importMappedRows() {
       fieldForCol.forEach((field, i) => { if (field !== 'ignore') obj[field] = row[i]; });
       return obj;
     });
-    const count = await bulkAddUnits(rowObjects);
+    const count = await bulkAddUnits(rowObjects, 'the Excel/CSV import');
     cancelMapping();
-    showUndoBar(count, 'the Excel/CSV import');
     statusEl.textContent = `✓ Imported ${count} unit${count === 1 ? '' : 's'} — switch to the Rent Roll tab to review.`;
     statusEl.className = 'parse-status done';
   } catch (err) {
@@ -839,8 +905,7 @@ async function callClaudeAndAddUnits(apiKey, content, statusEl, sourceLabel) {
   const parsed = JSON.parse(clean);
   if (!Array.isArray(parsed) || parsed.length === 0) throw new Error('No units found in that document.');
 
-  const count = await bulkAddUnits(parsed);
-  showUndoBar(count, sourceLabel);
+  const count = await bulkAddUnits(parsed, sourceLabel);
   statusEl.textContent = `✓ Added ${count} unit${count === 1 ? '' : 's'} — switch to the Rent Roll tab to review.`;
   statusEl.className = 'parse-status done';
 }
