@@ -187,39 +187,76 @@ function exampleIsoDateMonthsBefore(isoDate, months) {
   return d.toISOString().slice(0, 10);
 }
 
-function buildExampleRentRollRows(dealId) {
-  // unitType/sqft/currentRent/marketRent chosen so occupied-unit rents,
-  // rolled up, tie out to the T-12 Gross Potential Rent / Loss to Lease
-  // line items below. leaseEndOffset spreads rollover across 10 of the
-  // next 12 months (2 leases each) instead of piling into one month.
-  const units = [
-    { unit: 'S-101', unitType: 'Studio', sqft: 550, tenant: 'M. Alvarez', status: 'Occupied', currentRent: 1140, marketRent: 1225, leaseEndOffset: 1, day: 12 },
-    { unit: 'S-102', unitType: 'Studio', sqft: 550, tenant: 'J. Chen', status: 'Occupied', currentRent: 1155, marketRent: 1225, leaseEndOffset: 1, day: 26 },
-    { unit: 'S-103', unitType: 'Studio', sqft: 550, tenant: 'R. Patel', status: 'Occupied', currentRent: 1125, marketRent: 1225, leaseEndOffset: 2, day: 9 },
-    { unit: 'S-104', unitType: 'Studio', sqft: 550, tenant: 'K. Brooks', status: 'Occupied', currentRent: 1165, marketRent: 1225, leaseEndOffset: 2, day: 23 },
-    { unit: 'S-105', unitType: 'Studio', sqft: 550, tenant: 'T. Nguyen', status: 'Occupied', currentRent: 1150, marketRent: 1225, leaseEndOffset: 3, day: 15 },
-    { unit: 'S-106', unitType: 'Studio', sqft: 550, tenant: null, status: 'Vacant', currentRent: null, marketRent: 1225, leaseEndOffset: null, day: null },
-    { unit: '1BR-201', unitType: '1BR/1BA', sqft: 700, tenant: 'A. Rivera', status: 'Occupied', currentRent: 1340, marketRent: 1425, leaseEndOffset: 3, day: 28 },
-    { unit: '1BR-202', unitType: '1BR/1BA', sqft: 700, tenant: 'S. Okafor', status: 'Occupied', currentRent: 1360, marketRent: 1425, leaseEndOffset: 4, day: 6 },
-    { unit: '1BR-203', unitType: '1BR/1BA', sqft: 700, tenant: 'D. Kim', status: 'Occupied', currentRent: 1320, marketRent: 1425, leaseEndOffset: 4, day: 19 },
-    { unit: '1BR-204', unitType: '1BR/1BA', sqft: 700, tenant: 'L. Martinez', status: 'Occupied', currentRent: 1375, marketRent: 1425, leaseEndOffset: 5, day: 11 },
-    { unit: '1BR-205', unitType: '1BR/1BA', sqft: 700, tenant: 'B. Wallace', status: 'Occupied', currentRent: 1350, marketRent: 1425, leaseEndOffset: 5, day: 24 },
-    { unit: '1BR-206', unitType: '1BR/1BA', sqft: 700, tenant: 'C. Yoder', status: 'Occupied', currentRent: 1330, marketRent: 1425, leaseEndOffset: 6, day: 8 },
-    { unit: '1BR-207', unitType: '1BR/1BA', sqft: 700, tenant: 'E. Fischer', status: 'Occupied', currentRent: 1365, marketRent: 1425, leaseEndOffset: 6, day: 21 },
-    { unit: '1BR-208', unitType: '1BR/1BA', sqft: 700, tenant: 'P. Grant', status: 'Occupied', currentRent: 1345, marketRent: 1425, leaseEndOffset: 7, day: 14 },
-    { unit: '1BR-209', unitType: '1BR/1BA', sqft: 700, tenant: 'N. Suarez', status: 'Occupied', currentRent: 1355, marketRent: 1425, leaseEndOffset: 7, day: 27 },
-    { unit: '1BR-210', unitType: '1BR/1BA', sqft: 700, tenant: null, status: 'Vacant', currentRent: null, marketRent: 1425, leaseEndOffset: null, day: null },
-    { unit: '2BR-301', unitType: '2BR/2BA', sqft: 950, tenant: 'H. Delgado', status: 'Occupied', currentRent: 1640, marketRent: 1750, leaseEndOffset: 8, day: 5 },
-    { unit: '2BR-302', unitType: '2BR/2BA', sqft: 950, tenant: 'W. Foster', status: 'Occupied', currentRent: 1660, marketRent: 1750, leaseEndOffset: 8, day: 20 },
-    { unit: '2BR-303', unitType: '2BR/2BA', sqft: 950, tenant: 'G. Osei', status: 'Occupied', currentRent: 1620, marketRent: 1750, leaseEndOffset: 9, day: 10 },
-    { unit: '2BR-304', unitType: '2BR/2BA', sqft: 950, tenant: 'V. Petrova', status: 'Occupied', currentRent: 1675, marketRent: 1750, leaseEndOffset: 9, day: 25 },
-    { unit: '2BR-305', unitType: '2BR/2BA', sqft: 950, tenant: 'I. Haddad', status: 'Occupied', currentRent: 1650, marketRent: 1750, leaseEndOffset: 10, day: 7 },
-    { unit: '2BR-306', unitType: '2BR/2BA', sqft: 950, tenant: 'F. Delaney', status: 'Occupied', currentRent: 1630, marketRent: 1750, leaseEndOffset: 10, day: 22 },
-    { unit: '2BR-307', unitType: '2BR/2BA', sqft: 950, tenant: 'Y. Tanaka', status: 'Occupied', currentRent: 1665, marketRent: 1750, leaseEndOffset: 11, day: 16 },
-    { unit: '2BR-308', unitType: '2BR/2BA', sqft: 950, tenant: 'Q. Reyes', status: 'Notice', currentRent: 1645, marketRent: 1750, leaseEndOffset: 12, day: 3 }
-  ];
+// Deterministic pseudo-random in [-1, 1], seeded by an integer — used for
+// per-unit rent variance so a 180-unit rent roll doesn't look robotic,
+// without pulling in a real RNG dependency or hand-authoring 180 rows.
+function examplePseudoRandom(seed) {
+  const x = Math.sin(seed * 12.9898) * 43758.5453;
+  return (x - Math.floor(x)) * 2 - 1;
+}
 
-  return units.map(u => {
+const EXAMPLE_FIRST_NAMES = ['James', 'Maria', 'Robert', 'Linda', 'Michael', 'Patricia', 'David', 'Barbara', 'Richard', 'Jennifer', 'Joseph', 'Susan', 'Thomas', 'Jessica', 'Charles', 'Sarah', 'Daniel', 'Karen', 'Matthew', 'Nancy', 'Anthony', 'Lisa', 'Mark', 'Betty', 'Steven', 'Sandra', 'Andrew', 'Ashley', 'Kenneth', 'Emily', 'Paul', 'Kimberly', 'Joshua', 'Donna', 'Kevin', 'Michelle', 'Brian', 'Carol', 'George', 'Amanda', 'Edward', 'Dorothy', 'Ronald', 'Melissa', 'Timothy', 'Deborah', 'Jason', 'Stephanie', 'Jeffrey', 'Rebecca'];
+const EXAMPLE_LAST_NAMES = ['Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Garcia', 'Miller', 'Davis', 'Rodriguez', 'Martinez', 'Hernandez', 'Lopez', 'Gonzalez', 'Wilson', 'Anderson', 'Thomas', 'Taylor', 'Moore', 'Jackson', 'Martin', 'Lee', 'Perez', 'Thompson', 'White', 'Harris', 'Sanchez', 'Clark', 'Ramirez', 'Lewis', 'Robinson', 'Walker', 'Young', 'Allen', 'King', 'Wright', 'Scott', 'Torres', 'Nguyen', 'Hill', 'Flores'];
+
+function exampleTenantName(seq) {
+  const first = EXAMPLE_FIRST_NAMES[seq % EXAMPLE_FIRST_NAMES.length];
+  const last = EXAMPLE_LAST_NAMES[(seq * 7 + 3) % EXAMPLE_LAST_NAMES.length];
+  return `${first} ${last[0]}.`;
+}
+
+// 180 units across 4 unit types, ~92-93% occupancy (11 vacant, 2 on notice),
+// sized so GPR/loss-to-lease roll up to the T-12 lines below and NOI lands
+// around a ~$29.5M implied value at 65-75% LTV — see buildExampleLenderQuoteRows.
+const EXAMPLE_UNIT_TYPES = [
+  { key: 'S', unitType: 'Studio', sqft: 550, count: 25, marketRent: 1150 },
+  { key: '1BR', unitType: '1BR/1BA', sqft: 700, count: 80, marketRent: 1350 },
+  { key: '2BR', unitType: '2BR/2BA', sqft: 950, count: 60, marketRent: 1650 },
+  { key: '3BR', unitType: '3BR/2BA', sqft: 1150, count: 15, marketRent: 1950 }
+];
+const EXAMPLE_VACANT_COUNT = 11;
+const EXAMPLE_NOTICE_COUNT = 2;
+
+function buildExampleUnits() {
+  let seq = 0;
+  const units = [];
+  EXAMPLE_UNIT_TYPES.forEach((t, typeIdx) => {
+    for (let i = 0; i < t.count; i++) {
+      seq++;
+      const unitNum = 100 * (typeIdx + 1) + i + 1;
+      const rentNoise = Math.round(examplePseudoRandom(seq) * 30 / 5) * 5; // +/- $30, rounded to $5
+      const lossToLeaseBase = Math.round(t.marketRent * 0.055 / 5) * 5; // ~5.5% loss to lease
+      units.push({
+        seq, unit: `${t.key}-${unitNum}`, unitType: t.unitType, sqft: t.sqft,
+        marketRent: t.marketRent, currentRent: t.marketRent - lossToLeaseBase + rentNoise, status: 'Occupied'
+      });
+    }
+  });
+
+  // Spread vacant/notice units evenly across the whole roll (not clustered
+  // in one unit type) by picking evenly-spaced indices into the flat list.
+  const total = units.length;
+  const step = Math.floor(total / (EXAMPLE_VACANT_COUNT + EXAMPLE_NOTICE_COUNT));
+  for (let k = 0; k < EXAMPLE_VACANT_COUNT + EXAMPLE_NOTICE_COUNT; k++) {
+    const idx = (k * step + 5) % total;
+    units[idx].status = k < EXAMPLE_VACANT_COUNT ? 'Vacant' : 'Notice';
+  }
+
+  // Lease-end dates spread evenly across the next 12 months for every
+  // leased unit (occupied + notice — both still have a rent roll lease),
+  // so the Lease Rollover chart shows a distribution, not a spike.
+  let leaseSeq = 0;
+  units.forEach(u => {
+    if (u.status === 'Vacant') { u.tenant = null; u.currentRent = null; return; }
+    u.tenant = exampleTenantName(u.seq);
+    u.leaseEndOffset = (leaseSeq % 12) + 1;
+    u.day = 3 + ((leaseSeq * 5) % 25);
+    leaseSeq++;
+  });
+  return units;
+}
+
+function buildExampleRentRollRows(dealId) {
+  return buildExampleUnits().map(u => {
     const leaseEnd = u.leaseEndOffset != null ? exampleIsoDate(u.leaseEndOffset, u.day) : null;
     const leaseStart = leaseEnd ? exampleIsoDateMonthsBefore(leaseEnd, 12) : null;
     return {
@@ -231,28 +268,29 @@ function buildExampleRentRollRows(dealId) {
 }
 
 function buildExampleT12Rows(dealId) {
-  // Ties to the rent roll above: GPR = sum(market_rent)*12 for all 24 units,
-  // Vacancy Loss = market rent of the 2 vacant units, Loss to Lease = the
-  // market-vs-current gap on the 22 leased units. Reported vs. adjusted
-  // differ only on Insurance / Mgmt Fee / RE Taxes — a normal, modest
-  // set of lender underwriting adjustments (net -$10,000 to NOI).
+  // Ties to the rent roll above: GPR = sum(market_rent)*12 for all 180 units
+  // ($3,180,000), Vacancy Loss = market rent of the 11 vacant units
+  // ($184,200), Loss to Lease = the market-vs-current gap on the 169 leased
+  // units ($164,580). EGI $2,928,420, adjusted NOI $1,798,020. Reported vs.
+  // adjusted differ only on Insurance / Mgmt Fee / RE Taxes — a normal,
+  // modest set of lender underwriting adjustments (net -$77,000 to NOI).
   const rows = [
-    { category: 'Income', lineItem: 'Gross Potential Rent', reported: 427200, adjusted: 427200 },
-    { category: 'Income', lineItem: 'Vacancy Loss', reported: -31800, adjusted: -31800 },
-    { category: 'Income', lineItem: 'Concessions / Loss to Lease', reported: -22680, adjusted: -22680 },
-    { category: 'Income', lineItem: 'Other Income (Laundry, Parking, Fees, RUBS)', reported: 13000, adjusted: 13000 },
-    { category: 'Expense', lineItem: 'Payroll & Administrative', reported: 21600, adjusted: 21600 },
-    { category: 'Expense', lineItem: 'Repairs & Maintenance', reported: 15600, adjusted: 15600 },
-    { category: 'Expense', lineItem: 'Utilities - Electric', reported: 4320, adjusted: 4320 },
-    { category: 'Expense', lineItem: 'Utilities - Gas', reported: 2880, adjusted: 2880 },
-    { category: 'Expense', lineItem: 'Utilities - Water/Sewer/Trash', reported: 10800, adjusted: 10800 },
-    { category: 'Expense', lineItem: 'Contract Services', reported: 7200, adjusted: 7200 },
-    { category: 'Expense', lineItem: 'Marketing & Advertising', reported: 3600, adjusted: 3600 },
-    { category: 'Expense', lineItem: 'General & Administrative', reported: 4800, adjusted: 4800 },
-    { category: 'Expense', lineItem: 'Insurance', reported: 14500, adjusted: 16800, notes: 'Renewal quote reflects hard insurance market' },
-    { category: 'Expense', lineItem: 'Property Management Fee', reported: 12000, adjusted: 15400, notes: 'Normalized to 4% market fee — seller was self-managing' },
-    { category: 'Expense', lineItem: 'Real Estate Taxes', reported: 38900, adjusted: 43200, notes: 'Reassessed post-sale at purchase basis' },
-    { category: 'Expense', lineItem: 'Reserves for Replacement', reported: 6000, adjusted: 6000 }
+    { category: 'Income', lineItem: 'Gross Potential Rent', reported: 3180000, adjusted: 3180000 },
+    { category: 'Income', lineItem: 'Vacancy Loss', reported: -184200, adjusted: -184200 },
+    { category: 'Income', lineItem: 'Concessions / Loss to Lease', reported: -164580, adjusted: -164580 },
+    { category: 'Income', lineItem: 'Other Income (Laundry, Parking, Fees, RUBS)', reported: 97200, adjusted: 97200 },
+    { category: 'Expense', lineItem: 'Payroll & Administrative', reported: 171000, adjusted: 171000 },
+    { category: 'Expense', lineItem: 'Repairs & Maintenance', reported: 126000, adjusted: 126000 },
+    { category: 'Expense', lineItem: 'Utilities - Electric', reported: 30600, adjusted: 30600 },
+    { category: 'Expense', lineItem: 'Utilities - Gas', reported: 19800, adjusted: 19800 },
+    { category: 'Expense', lineItem: 'Utilities - Water/Sewer/Trash', reported: 77400, adjusted: 77400 },
+    { category: 'Expense', lineItem: 'Contract Services', reported: 50400, adjusted: 50400 },
+    { category: 'Expense', lineItem: 'Marketing & Advertising', reported: 25200, adjusted: 25200 },
+    { category: 'Expense', lineItem: 'General & Administrative', reported: 34200, adjusted: 34200 },
+    { category: 'Expense', lineItem: 'Insurance', reported: 108000, adjusted: 126000, notes: 'Renewal quote reflects hard insurance market' },
+    { category: 'Expense', lineItem: 'Property Management Fee', reported: 90000, adjusted: 117000, notes: 'Normalized to 4% market fee — seller was self-managing' },
+    { category: 'Expense', lineItem: 'Real Estate Taxes', reported: 274000, adjusted: 306000, notes: 'Reassessed post-sale at purchase basis' },
+    { category: 'Expense', lineItem: 'Reserves for Replacement', reported: 46800, adjusted: 46800 }
   ];
   return rows.map(r => ({
     deal_id: dealId, category: r.category, line_item: r.lineItem,
@@ -261,42 +299,43 @@ function buildExampleT12Rows(dealId) {
 }
 
 function buildExampleLenderQuoteRows(dealId) {
-  // NOI (adjusted) works out to $233,520/yr from the T-12 above. Amounts/LTVs
-  // all imply roughly the same ~$3.89M value at different leverage points —
-  // Heartland most conservative (best rate, lowest leverage) through Beacon
-  // most aggressive (highest leverage/rate, shortest term, interest reserve).
+  // NOI (adjusted) works out to $1,798,020/yr from the T-12 above. Amounts/
+  // LTVs all imply roughly the same ~$29.5M value at different leverage
+  // points across the 65-75% LTV band — Heartland most conservative (best
+  // rate/all-in, lowest leverage, highest DSCR) through Beacon most
+  // aggressive (highest leverage/rate, shortest term, interest reserve).
   const quotes = [
     {
-      name: 'Meridian Capital', type: 'Agency (Fannie/Freddie)', amount: 2725000, ltv: 70,
+      name: 'Heartland Life Insurance Co.', type: 'Life Company', amount: 19200000, ltv: 65,
+      rate: 5.65, rateType: 'Fixed', spread: null, term: 10, amort: 30, io: 0, dscr: 1.35,
+      recourse: 'Non-Recourse', prepay: 'Defeasance', ext: '',
+      origFee: 0.50, appFee: 15000, cash: 'None', close: 65,
+      reserves: 'Replacement Reserve', conditions: 'Min 1.35x DSCR · no cash-out',
+      notes: 'Lowest rate and all-in cost; most conservative leverage and DSCR cushion'
+    },
+    {
+      name: 'First Sterling Bank', type: 'Bank', amount: 20000000, ltv: 68,
+      rate: 6.25, rateType: 'Fixed', spread: null, term: 5, amort: 25, io: 0, dscr: 1.20,
+      recourse: 'Recourse', prepay: 'Step-Down (5-4-3-2-1)', ext: '1 × 1yr',
+      origFee: 0.75, appFee: 10000, cash: 'Soft Lockbox', close: 40,
+      reserves: 'Tax & Insurance', conditions: 'Personal guaranty from sponsor required',
+      notes: 'Fastest close; relationship pricing; recourse required'
+    },
+    {
+      name: 'Meridian Capital', type: 'Agency (Fannie/Freddie)', amount: 20650000, ltv: 70,
       rate: 5.85, rateType: 'Fixed', spread: null, term: 10, amort: 30, io: 12, dscr: 1.25,
       recourse: 'Non-Recourse', prepay: 'Yield Maintenance', ext: '2 × 1yr',
-      origFee: 1.00, appFee: 10000, cash: 'Cash Trap / Springing', close: 55,
+      origFee: 1.00, appFee: 20000, cash: 'Cash Trap / Springing', close: 60,
       reserves: 'Tax & Insurance, Replacement Reserve', conditions: 'PCA & Phase I required · min DSCR 1.25x',
-      notes: 'Best all-in pricing; longest amortization'
+      notes: 'Agency execution with 12-month interest-only; non-recourse'
     },
     {
-      name: 'First Sterling Bank', type: 'Bank', amount: 2600000, ltv: 67,
-      rate: 6.35, rateType: 'Fixed', spread: null, term: 5, amort: 25, io: 0, dscr: 1.20,
-      recourse: 'Recourse', prepay: 'Step-Down (5-4-3-2-1)', ext: '1 × 1yr',
-      origFee: 0.75, appFee: 5000, cash: 'Soft Lockbox', close: 35,
-      reserves: 'Tax & Insurance', conditions: 'Personal guaranty from sponsor required',
-      notes: 'Fastest close; relationship pricing'
-    },
-    {
-      name: 'Beacon Bridge Debt Fund', type: 'Debt Fund', amount: 2800000, ltv: 72,
-      rate: 6.95, rateType: 'Floating', spread: 'SOFR + 275', term: 3, amort: 30, io: 24, dscr: 1.15,
+      name: 'Beacon Bridge Debt Fund', type: 'Debt Fund', amount: 22100000, ltv: 75,
+      rate: 6.85, rateType: 'Floating', spread: 'SOFR + 265', term: 3, amort: 30, io: 24, dscr: 1.15,
       recourse: 'Non-Recourse', prepay: 'Open', ext: '2 × 1yr',
-      origFee: 1.50, appFee: 15000, cash: 'Hard Lockbox', close: 25,
-      reserves: 'Interest Reserve, Replacement Reserve', conditions: 'Rate cap required (strike 6.00%)',
-      notes: 'Highest leverage; bridge-style flexibility for lease-up'
-    },
-    {
-      name: 'Heartland Life Insurance Co.', type: 'Life Company', amount: 2530000, ltv: 65,
-      rate: 5.70, rateType: 'Fixed', spread: null, term: 10, amort: 30, io: 0, dscr: 1.35,
-      recourse: 'Non-Recourse', prepay: 'Defeasance', ext: '',
-      origFee: 0.50, appFee: 7500, cash: 'None', close: 60,
-      reserves: 'Replacement Reserve', conditions: 'Min 1.35x DSCR · no cash-out',
-      notes: 'Lowest rate; most conservative leverage'
+      origFee: 1.50, appFee: 25000, cash: 'Hard Lockbox', close: 30,
+      reserves: 'Interest Reserve, Replacement Reserve', conditions: 'Rate cap required (strike 7.00%)',
+      notes: 'Highest leverage; floating-rate bridge execution for lease-up; interest reserve required'
     }
   ];
 
@@ -315,7 +354,7 @@ async function seedExampleDeal() {
   const deal = await createDeal({
     name: EXAMPLE_DEAL_NAME,
     propertyType: 'Garden-Style Multifamily',
-    loanAmount: 2700000,
+    loanAmount: 20000000,
     status: 'active'
   });
 
